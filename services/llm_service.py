@@ -66,38 +66,30 @@ async def wait_for_completion(chat_id, run_id, max_retries=20, initial_delay=1.0
 
 
 async def ask_assistant(question: str) -> dict:
-    """Отправляет запрос в OpenAI через ProxyAPI и получает ответ."""
+    """Оптимизированный запрос к OpenAI."""
     global client
     if client is None:
         await init_http_client()
 
     try:
-        # Заменяем asyncio.timeout() на asyncio.wait_for()
-        thread_response = await asyncio.wait_for(
-            client.post(f"{API_URL}/threads"), timeout=15
-        )
-
+        thread_response = await client.post(f"{API_URL}/threads")
         if thread_response.status_code != 200:
             logger.error(f"Ошибка создания треда: {thread_response.text}")
             return {"reasoning": "Ошибка создания треда", "answer": None, "sources": []}
 
         chat_id = thread_response.json().get('id')
 
-        message_response = await asyncio.wait_for(
-            client.post(
-                f"{API_URL}/threads/{chat_id}/messages",
-                json={"role": "user", "content": question}
-            ), timeout=15
+        message_response = await client.post(
+            f"{API_URL}/threads/{chat_id}/messages",
+            json={"role": "user", "content": question}
         )
         if message_response.status_code != 200:
             logger.error(f"Ошибка отправки сообщения: {message_response.text}")
             return {"reasoning": "Ошибка отправки сообщения", "answer": None, "sources": []}
 
-        run_response = await asyncio.wait_for(
-            client.post(
-                f"{API_URL}/threads/{chat_id}/runs",
-                json={"assistant_id": ASSISTANT_ID}
-            ), timeout=15
+        run_response = await client.post(
+            f"{API_URL}/threads/{chat_id}/runs",
+            json={"assistant_id": ASSISTANT_ID}
         )
         if run_response.status_code != 200:
             logger.error(f"Ошибка запуска ассистента: {run_response.text}")
@@ -109,9 +101,7 @@ async def ask_assistant(question: str) -> dict:
         if not run_status:
             return {"reasoning": "AI request timeout", "answer": None, "sources": []}
 
-        messages_response = await asyncio.wait_for(
-            client.get(f"{API_URL}/threads/{chat_id}/messages"), timeout=15
-        )
+        messages_response = await client.get(f"{API_URL}/threads/{chat_id}/messages")
         if messages_response.status_code != 200:
             logger.error(f"Ошибка получения ответа: {messages_response.text}")
             return {"reasoning": "Ошибка получения ответа", "answer": None, "sources": []}
@@ -122,47 +112,8 @@ async def ask_assistant(question: str) -> dict:
             None
         )
 
-        if latest_message is None:
-            logger.error("Ответ от ассистента не найден.")
-            return {"reasoning": "Ответ от ассистента не найден", "answer": None, "sources": []}
-
-        logger.info(f"Ответ от AI: {latest_message}")
-
-        try:
-            # Попытка декодировать JSON-объект
-            gpt_response = json.loads(latest_message)
-
-            # Проверяем, если answer = None, заменяем его значением id
-            if gpt_response.get("answer") is None:
-                gpt_response["answer"] = gpt_response.get("id", "Unknown")
-
-            # Проверяем наличие reasoning и sources
-            gpt_response.setdefault("reasoning", "Нет объяснения.")
-            gpt_response.setdefault("sources", [])
-
-        except json.JSONDecodeError:
-            logger.warning("Некорректный JSON-ответ, пытаемся обработать вручную.")
-
-            # Попытка извлечь корректный JSON из текста
-            try:
-                extracted_json = latest_message.split("{", 1)[1].rsplit("}", 1)[0]
-                extracted_json = "{" + extracted_json + "}"
-                gpt_response = json.loads(extracted_json)
-            except Exception as e:
-                logger.error(f"Ошибка обработки JSON: {e}")
-                gpt_response = {
-                    "id": None,
-                    "answer": None,
-                    "reasoning": latest_message,
-                    "sources": []
-                }
-
-        return gpt_response
-
-    except asyncio.TimeoutError:
-        logger.error("Превышен лимит времени ожидания запроса к AI")
-        return {"reasoning": "AI request timeout", "answer": None, "sources": []}
+        return json.loads(latest_message) if latest_message else {}
 
     except Exception as e:
-        logger.error(f"Ошибка взаимодействия с ProxyAPI: {e}")
+        logger.error(f"Ошибка при запросе к AI: {e}")
         return {"reasoning": "Ошибка при обращении к AI", "answer": None, "sources": []}
