@@ -60,9 +60,10 @@ docker-compose down
 
 Перейди в браузере: [http://localhost:8080/docs](http://localhost:8080/docs)
 
-### 2. Отправить POST-запрос в API
+### 2. Отправить POST-запрос в API (локально)
 
-#### **Запрос:** `/api/request`
+#### **Запрос:** `localhost:8080/api/request`
+#### **Запрос на сервер:** `158.160.58.54:8080/api/request`
 
 ```json
 {
@@ -80,4 +81,4 @@ docker-compose down
     "reasoning": "Этот факультет ведет курсы по искусственному интеллекту и машинному обучению. Ответ сгенерирован моделью GPT4o.",
     "sources": ["https://itmo.ru"]
 }
-
+```
