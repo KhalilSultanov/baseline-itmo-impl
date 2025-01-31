@@ -60,9 +60,9 @@ docker-compose down
 
 Перейди в браузере: [http://localhost:8080/docs](http://localhost:8080/docs)
 
-### 2. Отправить POST-запрос в API (локально)
+### 2. Отправить POST-запрос в API
 
-#### **Запрос:** `localhost:8080/api/request`
+#### **Запрос локально:** `localhost:8080/api/request`
 #### **Запрос на сервер:** `158.160.58.54:8080/api/request`
 
 ```json
