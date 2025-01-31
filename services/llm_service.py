@@ -129,10 +129,33 @@ async def ask_assistant(question: str) -> dict:
         logger.info(f"Ответ от AI: {latest_message}")
 
         try:
+            # Попытка декодировать JSON-объект
             gpt_response = json.loads(latest_message)
+
+            # Проверяем, если answer = None, заменяем его значением id
+            if gpt_response.get("answer") is None:
+                gpt_response["answer"] = gpt_response.get("id", "Unknown")
+
+            # Проверяем наличие reasoning и sources
+            gpt_response.setdefault("reasoning", "Нет объяснения.")
+            gpt_response.setdefault("sources", [])
+
         except json.JSONDecodeError:
-            gpt_response = {"reasoning": latest_message, "answer": None, "sources": []}
-            logger.warning("Некорректный JSON-ответ, возвращаем текст.")
+            logger.warning("Некорректный JSON-ответ, пытаемся обработать вручную.")
+
+            # Попытка извлечь корректный JSON из текста
+            try:
+                extracted_json = latest_message.split("{", 1)[1].rsplit("}", 1)[0]
+                extracted_json = "{" + extracted_json + "}"
+                gpt_response = json.loads(extracted_json)
+            except Exception as e:
+                logger.error(f"Ошибка обработки JSON: {e}")
+                gpt_response = {
+                    "id": None,
+                    "answer": None,
+                    "reasoning": latest_message,
+                    "sources": []
+                }
 
         return gpt_response
 
