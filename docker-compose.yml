@@ -7,16 +7,9 @@ services:
     ports:
       - "8080:8080"
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
       - TZ=UTC
     volumes:
       - ./logs:/app/logs
-    # Если нужно GPU
-    # runtime: nvidia
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]

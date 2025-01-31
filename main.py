@@ -1,77 +1,59 @@
-import time
-from typing import List
-
-from fastapi import FastAPI, HTTPException, Request, Response
-from pydantic import HttpUrl
-from schemas.request import PredictionRequest, PredictionResponse
+from fastapi import FastAPI, HTTPException, Request
+from schemas.request import PredictionResponse, PredictionRequest
+from services.llm_service import ask_assistant, init_http_client, close_http_client
 from utils.logger import setup_logger
 
-# Initialize
-app = FastAPI()
-logger = None
 
-
-@app.on_event("startup")
-async def startup_event():
+async def lifespan(app: FastAPI):
+    """Настройка логгера и HTTP клиента перед запуском."""
     global logger
     logger = await setup_logger()
+    await init_http_client()
+    yield
+    await close_http_client()
+    await logger.shutdown()
+
+
+app = FastAPI(lifespan=lifespan, openapi_url="/openapi.json", docs_url="/docs", redoc_url="/redoc")
 
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    start_time = time.time()
-
+    """Логирует входящие запросы и ответы."""
     body = await request.body()
-    await logger.info(
-        f"Incoming request: {request.method} {request.url}\n"
-        f"Request body: {body.decode()}"
-    )
+    await logger.info(f"Incoming request: {request.method} {request.url} - Body: {body.decode()}")
 
     response = await call_next(request)
-    process_time = time.time() - start_time
 
-    response_body = b""
-    async for chunk in response.body_iterator:
-        response_body += chunk
+    await logger.info(f"Response status: {response.status_code}")
+    return response
 
-    await logger.info(
-        f"Request completed: {request.method} {request.url}\n"
-        f"Status: {response.status_code}\n"
-        f"Response body: {response_body.decode()}\n"
-        f"Duration: {process_time:.3f}s"
-    )
 
-    return Response(
-        content=response_body,
-        status_code=response.status_code,
-        headers=dict(response.headers),
-        media_type=response.media_type,
-    )
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Логирует неожиданные ошибки."""
+    await logger.error(f"Unhandled error: {str(exc)}")
+    return HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post("/api/request", response_model=PredictionResponse)
 async def predict(body: PredictionRequest):
+    """Обработка запроса и возврат ответа от OpenAI."""
     try:
-        await logger.info(f"Processing prediction request with id: {body.id}")
-        # Здесь будет вызов вашей модели
-        answer = 1  # Замените на реальный вызов модели
-        sources: List[HttpUrl] = [
-            HttpUrl("https://itmo.ru/ru/"),
-            HttpUrl("https://abit.itmo.ru/"),
-        ]
+        await logger.info(f"Processing request with id: {body.id}")
+
+        gpt_response = await ask_assistant(body.query)
 
         response = PredictionResponse(
             id=body.id,
-            answer=answer,
-            reasoning="Из информации на сайте",
-            sources=sources,
+            answer=gpt_response.get("answer"),
+            reasoning=gpt_response.get("reasoning", "Ответ не найден."),
+            sources=gpt_response.get("sources", [])
         )
+
         await logger.info(f"Successfully processed request {body.id}")
         return response
-    except ValueError as e:
-        error_msg = str(e)
-        await logger.error(f"Validation error for request {body.id}: {error_msg}")
-        raise HTTPException(status_code=400, detail=error_msg)
+
     except Exception as e:
         await logger.error(f"Internal error processing request {body.id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
